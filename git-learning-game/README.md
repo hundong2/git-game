@@ -13,6 +13,53 @@ An interactive game to master Git commands from basic to expert level through ha
 - 🚀 **Docker Ready**: One-command deployment with docker-compose
 - ⚡ **Real-time Updates**: WebSocket-powered live collaboration experience
 
+## 🔧 포트 설정 방법
+
+### 방법 1: 시작 스크립트 사용 (Docker)
+
+```bash
+# 기본 포트 (3001)
+./start-game.sh
+
+# 커스텀 포트
+./start-game.sh [GAME_PORT] [API_PORT] [DB_PORT] [REDIS_PORT]
+./start-game.sh 8080 8001 5433 6380
+```
+
+### 방법 2: 환경변수 사용
+
+```bash
+# 환경변수로 포트 지정
+GAME_PORT=8080 GAME_API_PORT=8001 docker-compose up -d
+
+# .env 파일에 설정
+echo "GAME_PORT=8080" >> .env
+echo "GAME_API_PORT=8001" >> .env
+```
+
+### 방법 3: docker-compose.yml 직접 수정
+
+```yaml
+services:
+  nginx:
+    ports:
+      - "8080:80"  # 원하는 포트로 변경
+  git-learning-game:
+    ports:
+      - "8001:8000"  # API 포트 변경
+```
+
+### 개발 모드 포트 설정
+
+```bash
+# 개발 서버 포트 지정
+./run-dev.sh 8001 3001  # 백엔드:8001, 프론트엔드:3001
+
+# 또는 환경변수로
+export REACT_APP_API_URL=http://localhost:8001
+PORT=3001 npm start
+```
+
 ## 🛠️ Tech Stack
 
 **Backend:**
@@ -43,25 +90,33 @@ An interactive game to master Git commands from basic to expert level through ha
 git clone https://github.com/your-repo/git-learning-game.git
 cd git-learning-game
 
-# Start all services
-docker-compose up -d
+# 기본 포트로 시작 (http://localhost:3001)
+./start-game.sh
 
-# Visit http://localhost:80
+# 또는 커스텀 포트로 시작
+./start-game.sh 8080 8001  # 게임:8080, API:8001
+
+# 또는 직접 docker-compose 사용
+docker-compose up -d
 ```
 
 ### Option 2: Local Development
 
 ```bash
-# Backend setup
-cd backend
+# 개발 모드 (기본: 백엔드:8000, 프론트엔드:3000)
+./run-dev.sh
+
+# 커스텀 포트로 개발 모드
+./run-dev.sh 8001 3001  # 백엔드:8001, 프론트엔드:3001
+
+# 또는 수동으로 설정
+cd backend && python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
-cp ../.env.example .env
 uvicorn main:app --reload --port 8000
 
-# Frontend setup (new terminal)
-cd frontend
-npm install
-npm start
+# 새 터미널에서
+cd frontend && npm install
+REACT_APP_API_URL=http://localhost:8000 PORT=3000 npm start
 ```
 
 ## 🎯 Game Progression

@@ -1,0 +1,17 @@
+# docker-compose.override.yml
+# 이 파일을 사용하여 포트를 커스터마이지하세요
+# 예: GAME_PORT=3001 GAME_API_PORT=8001 docker-compose up
+
+version: '3.8'
+
+services:
+  nginx:
+    ports:
+      - "${GAME_PORT:-80}:80"  # 기본값 80, 환경변수로 오버라이드 가능
+      - "${GAME_HTTPS_PORT:-443}:443"
+
+  git-learning-game:
+    ports:
+      - "${GAME_API_PORT:-8000}:8000"
+    environment:
+      - PORT=${GAME_API_INTERNAL_PORT:-8000}

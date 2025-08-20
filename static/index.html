@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git Learning Game</title>
+    <link href="https://cdn.jsdelivr.net/npm/xterm@4.18.0/css/xterm.min.css" rel="stylesheet">
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+        }
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+        #git-status-ui {
+            flex: 1;
+            border-bottom: 2px solid #888;
+            padding: 10px;
+            overflow-y: auto;
+        }
+        #terminal-container {
+            flex: 1;
+            padding: 10px;
+        }
+        .container-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #4ec9b0;
+        }
+        .git-state-container {
+            display: flex;
+            flex-direction: row;
+            width: 100%;
+        }
+        .git-state-column {
+            flex: 1;
+            padding: 0 10px;
+            border-left: 1px solid #444;
+        }
+        .git-state-column:first-child {
+            border-left: none;
+        }
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="git-status-ui">
+            <div class="container-title" id="stage-title">Stage Info</div>
+            <p id="stage-description">Connecting to server...</p>
+            <hr>
+            <div class="git-state-container">
+                <div class="git-state-column">
+                    <div class="container-title">Status</div>
+                    <pre id="git-status-content"></pre>
+                </div>
+                <div class="git-state-column">
+                    <div class="container-title">Log</div>
+                    <pre id="git-log-content"></pre>
+                </div>
+                <div class="git-state-column">
+                    <div class="container-title">Branches</div>
+                    <pre id="git-branch-content"></pre>
+                </div>
+            </div>
+        </div>
+        <div id="terminal-container">
+            <div class="container-title">Command Line</div>
+            <div id="terminal"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm@4.18.0/lib/xterm.min.js"></script>
+    <script>
+        const socket = io();
+        const term = new Terminal({
+            cursorBlink: true,
+            theme: {
+                background: '#1e1e1e',
+                foreground: '#d4d4d4',
+                cursor: '#d4d4d4',
+            }
+        });
+        term.open(document.getElementById('terminal'));
+
+        let currentLine = '';
+        const prompt = '$ ';
+
+        function writePrompt() {
+            currentLine = '';
+            term.write('\r\n' + prompt);
+        }
+
+        term.onKey(({ key, domEvent }) => {
+            if (domEvent.keyCode === 13) { // Enter
+                if (currentLine) {
+                    socket.emit('command', { command: currentLine });
+                }
+                writePrompt();
+            } else if (domEvent.keyCode === 8) { // Backspace
+                if (currentLine.length > 0) {
+                    term.write('\b \b');
+                    currentLine = currentLine.slice(0, -1);
+                }
+            } else {
+                currentLine += key;
+                term.write(key);
+            }
+        });
+
+        socket.on('connect', () => {
+            term.writeln('Welcome to the Git Learning Game!');
+            term.writeln('Connected to server.');
+            writePrompt();
+        });
+
+        socket.on('response', (data) => {
+            term.writeln(data.output.replace(/\n/g, '\r\n'));
+        });
+
+        socket.on('stage_info', (data) => {
+            document.getElementById('stage-title').innerText = `Stage: ${data.title}`;
+            document.getElementById('stage-description').innerText = data.description;
+        });
+
+        socket.on('git_state_update', (data) => {
+            document.getElementById('git-status-content').innerText = data.status;
+            document.getElementById('git-log-content').innerText = data.log;
+            document.getElementById('git-branch-content').innerText = data.branch;
+        });
+
+        socket.on('disconnect', () => {
+            term.writeln('Disconnected from server.');
+        });
+
+    </if>
+</body>
+</html>

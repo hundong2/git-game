@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+  git-learning-game:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"  # 백엔드 API 포트
+    environment:
+      - DATABASE_URL=postgresql://gitgame:gitgame123@db:5432/gitgame
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8000
+    volumes:
+      - ./data:/app/data
+      - /tmp/git-game-repos:/tmp/git-game-repos
+    depends_on:
+      - db
+      - redis
+    restart: unless-stopped
+    networks:
+      - git-game-network
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=gitgame
+      - POSTGRES_USER=gitgame
+      - POSTGRES_PASSWORD=gitgame123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    restart: unless-stopped
+    networks:
+      - git-game-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - git-game-network
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "3001:80"  # 원하는 포트로 변경 (예: 3001)
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./ssl:/etc/nginx/ssl
+    depends_on:
+      - git-learning-game
+    restart: unless-stopped
+    networks:
+      - git-game-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  git-game-network:
+    driver: bridge

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import subprocess
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 
 ValidationResult = Tuple[bool, str]
@@ -643,6 +643,129 @@ STAGES: List[Stage] = [
     ),
 ]
 
+STAGE_INFOS: Dict[int, str] = {
+    1: (
+        "Cherry-pick 상세:\n"
+        "- 기능: 다른 브랜치의 특정 커밋 1개를 현재 브랜치로 복사 적용합니다.\n"
+        "- 주 사용 시점: hotfix를 전체 merge 없이 main에 빠르게 반영할 때.\n"
+        "- 주의: 같은 변경을 중복 적용하면 충돌/중복 커밋이 생길 수 있습니다."
+    ),
+    2: (
+        "Rebase Squash 상세:\n"
+        "- 기능: 여러 커밋을 정리(squash/reword)해 히스토리를 읽기 쉽게 만듭니다.\n"
+        "- 주 사용 시점: PR 올리기 전 WIP 커밋을 정돈할 때.\n"
+        "- 주의: 공유 브랜치의 공개 커밋 rebase는 협업 충돌을 유발할 수 있습니다."
+    ),
+    3: (
+        "Merge Conflict 상세:\n"
+        "- 기능: 두 브랜치의 변경을 합치며 충돌을 수동 해결합니다.\n"
+        "- 주 사용 시점: 기능 브랜치를 main에 통합할 때.\n"
+        "- 주의: 충돌 마커(<<<<, >>>>)가 파일에 남지 않게 마무리하세요."
+    ),
+    4: (
+        "Reset Recovery 상세:\n"
+        "- 기능: reset 모드로 커밋/스테이징/워킹트리 상태를 되돌립니다.\n"
+        "- 주 사용 시점: 잘못된 커밋을 로컬에서 정리할 때.\n"
+        "- 주의: --hard는 변경을 잃을 수 있으니 복구 가능성(reflog)까지 고려하세요."
+    ),
+    5: (
+        "Release Hotfix 상세:\n"
+        "- 기능: 릴리스 브랜치 변경을 안정적으로 가져와 수정 커밋을 남깁니다.\n"
+        "- 주 사용 시점: 배포 직전/직후 긴급 수정 반영.\n"
+        "- 주의: 메시지 규칙(fix 포함)으로 변경 의도를 명확히 남기세요."
+    ),
+    6: (
+        "Feature Branch Start 상세:\n"
+        "- 기능: 기능 전용 브랜치에서 독립적으로 개발 시작.\n"
+        "- 주 사용 시점: main을 보호하며 병렬 작업할 때.\n"
+        "- 주의: 브랜치 네이밍과 커밋 메시지 규칙을 초반부터 지키세요."
+    ),
+    7: (
+        "Stash Practice 상세:\n"
+        "- 기능: 작업 중 변경을 임시 저장(stash)하고 다시 적용합니다.\n"
+        "- 주 사용 시점: 급한 브랜치 전환/리뷰 대응이 필요할 때.\n"
+        "- 주의: stash apply/pop 이후 충돌 여부를 반드시 확인하세요."
+    ),
+    8: (
+        "Release Tag 상세:\n"
+        "- 기능: 특정 커밋에 버전 태그를 붙여 릴리스 기준점을 만듭니다.\n"
+        "- 주 사용 시점: 배포 버전 고정, 롤백 기준 관리.\n"
+        "- 주의: annotated tag를 사용하면 이력 추적이 더 명확합니다."
+    ),
+    9: (
+        "Cherry-pick Range 상세:\n"
+        "- 기능: 커밋 범위를 선택적으로 현재 브랜치에 복사 적용합니다.\n"
+        "- 주 사용 시점: 기능 브랜치의 일부 커밋만 선별 반영할 때.\n"
+        "- 주의: 범위 지정(start^..end) 실수 시 불필요한 커밋까지 들어올 수 있습니다."
+    ),
+    10: (
+        "Revert 상세:\n"
+        "- 기능: 기존 커밋을 취소하는 '새 커밋'을 생성합니다.\n"
+        "- 주 사용 시점: 공유 브랜치에서 안전하게 변경을 되돌릴 때.\n"
+        "- 주의: reset과 달리 히스토리는 보존됩니다."
+    ),
+    11: (
+        "Rebase --onto 상세:\n"
+        "- 기능: 특정 구간 커밋을 새 베이스로 재배치합니다.\n"
+        "- 주 사용 시점: 잘못된 기반 브랜치에서 작업한 커밋을 구조적으로 옮길 때.\n"
+        "- 주의: 기준 커밋(old-base) 지정이 틀리면 의도치 않은 재배치가 발생합니다."
+    ),
+    12: (
+        "Reflog Rescue 상세:\n"
+        "- 기능: 사라진 것처럼 보이는 HEAD 이동 이력을 reflog로 추적해 복구.\n"
+        "- 주 사용 시점: reset --hard, 잘못된 rebase 후 복구할 때.\n"
+        "- 주의: reflog는 로컬 기록이므로 오래 지나면 정리될 수 있습니다."
+    ),
+    13: (
+        "Bisect Start 상세:\n"
+        "- 기능: good/bad 기준으로 이진 탐색해 문제 커밋을 빠르게 찾습니다.\n"
+        "- 주 사용 시점: 언제 버그가 들어왔는지 모를 때.\n"
+        "- 주의: 판별 기준(테스트/검증)이 명확해야 정확도가 올라갑니다."
+    ),
+    14: (
+        "Worktree Hotfix 상세:\n"
+        "- 기능: 하나의 저장소에서 여러 브랜치를 별도 디렉토리로 동시 작업.\n"
+        "- 주 사용 시점: main 작업 중 hotfix를 즉시 병행할 때.\n"
+        "- 주의: 각 worktree의 현재 브랜치를 혼동하지 않도록 주의하세요."
+    ),
+    15: (
+        "Bundle Export 상세:\n"
+        "- 기능: 네트워크 없이 주고받을 수 있는 Git 번들 파일 생성.\n"
+        "- 주 사용 시점: 오프라인/보안망 환경에서 이력 전달.\n"
+        "- 주의: 필요한 ref 범위를 포함했는지 생성 후 검증하세요."
+    ),
+    16: (
+        "Notes Namespace 상세:\n"
+        "- 기능: 커밋 본문을 바꾸지 않고 notes로 메타데이터를 첨부.\n"
+        "- 주 사용 시점: 리뷰 코멘트, 내부 추적 정보 분리 저장.\n"
+        "- 주의: notes ref 공유(push) 규칙을 팀에 맞춰 설정하세요."
+    ),
+    17: (
+        "Replace Object 상세:\n"
+        "- 기능: 원본 객체를 바꾸지 않고 replace ref로 대체 객체를 참조.\n"
+        "- 주 사용 시점: 히스토리 실험/임시 복구 검증.\n"
+        "- 주의: 로컬 중심 기능이므로 협업 전 replace ref 전파 여부를 확인하세요."
+    ),
+    18: (
+        "Merge Strategy Ours 상세:\n"
+        "- 기능: 충돌 시 현재 브랜치(main) 변경을 우선 채택(-X ours).\n"
+        "- 주 사용 시점: 통합은 하되 현재 안정 설정을 유지하고 싶을 때.\n"
+        "- 주의: 상대 변경이 사라질 수 있어 의도 검토가 필요합니다."
+    ),
+    19: (
+        "Merge Then Cleanup 상세:\n"
+        "- 기능: merge 완료 후 작업 브랜치를 정리해 브랜치 생명주기 종료.\n"
+        "- 주 사용 시점: 기능 반영 완료 후 저장소를 깔끔하게 유지할 때.\n"
+        "- 주의: 삭제 전 원격/로컬 모두에서 반영 여부를 확인하세요."
+    ),
+    20: (
+        "Final Amend 상세:\n"
+        "- 기능: 마지막 커밋에 staged 변경을 합치고 메시지를 최종 정리.\n"
+        "- 주 사용 시점: 리뷰 반영 후 마지막 커밋 품질 정리 단계.\n"
+        "- 주의: 이미 공유된 커밋 amend는 히스토리 변경이므로 팀 합의가 필요합니다."
+    ),
+}
+
 
 def get_stage(stage_id: int) -> Stage:
     for stage in STAGES:
@@ -650,3 +773,80 @@ def get_stage(stage_id: int) -> Stage:
             return stage
     raise ValueError(f"Unknown stage: {stage_id}")
 
+
+def _safe_git(repo_path: Path, *args: str) -> str:
+    try:
+        return _git(repo_path, *args).strip()
+    except subprocess.CalledProcessError:
+        return ""
+
+
+def _render_repo_snapshot(repo_path: Path) -> List[str]:
+    current_branch = _safe_git(repo_path, "rev-parse", "--abbrev-ref", "HEAD") or "unknown"
+    status_raw = _safe_git(repo_path, "status", "--short")
+    branch_raw = _safe_git(repo_path, "branch", "--sort=refname")
+    graph_raw = _safe_git(repo_path, "log", "--graph", "--decorate", "--oneline", "--all", "-n", "12")
+
+    lines = [
+        "브랜치 맵 (CLI UI):",
+        "┌─ 저장소 스냅샷",
+        f"│ 현재 브랜치: {current_branch}",
+        f"│ 작업 트리: {'clean' if not status_raw else '변경 있음'}",
+        "├─ 브랜치 목록",
+    ]
+
+    branches = [line.rstrip() for line in branch_raw.splitlines() if line.strip()]
+    if branches:
+        for branch in branches:
+            lines.append(f"│ {branch}")
+    else:
+        lines.append("│ (브랜치 정보 없음)")
+
+    lines.append("├─ 최근 커밋 그래프")
+    graph_lines = [line.rstrip() for line in graph_raw.splitlines() if line.strip()]
+    if graph_lines:
+        for graph_line in graph_lines:
+            lines.append(f"│ {graph_line}")
+    else:
+        lines.append("│ (커밋 그래프 없음)")
+    lines.append("└─ tip: git log --graph --decorate --oneline --all")
+    return lines
+
+
+def get_stage_info(stage_id: int, mode: str = "brief", repo_path: Path | None = None) -> str:
+    stage = get_stage(stage_id)
+    default_info = (
+        f"{stage.title} 상세:\n"
+        f"- 목표: {stage.objective}\n"
+        f"- 힌트: {stage.hint}\n"
+        f"- 해법 예시: {stage.solution}"
+    )
+    raw_info = STAGE_INFOS.get(stage_id, default_info)
+    lines = [line.strip() for line in raw_info.splitlines() if line.strip()]
+
+    rendered = [
+        f"[INFO] Stage {stage.stage_id} | {stage.title}",
+        f"목표: {stage.objective}",
+        "",
+    ]
+    for line in lines:
+        if line.endswith("상세:"):
+            continue
+        if line.startswith("- "):
+            rendered.append(f"• {line[2:]}")
+        else:
+            rendered.append(line)
+
+    if mode == "full":
+        rendered.extend(
+            [
+                "",
+                "추천 커맨드:",
+                f"• 힌트: {stage.hint}",
+                f"• 해법 예시: {stage.solution}",
+            ]
+        )
+        if repo_path is not None:
+            rendered.extend(["", *_render_repo_snapshot(repo_path)])
+
+    return "\n".join(rendered)

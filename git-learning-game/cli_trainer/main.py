@@ -9,7 +9,7 @@ import sys
 from .doctor import format_doctor_report, run_doctor
 from .engine import GitTrainer
 from .storage import append_session, format_leaderboard
-from .stages import STAGES
+from .stages import STAGES, get_stage_info
 
 
 def _print_stage(stage_id: int) -> None:
@@ -37,7 +37,7 @@ def cmd_leaderboard(limit: int) -> int:
 def cmd_play(start_stage: int, player: str) -> int:
     trainer = GitTrainer(stage_id=start_stage)
     print("Git Trainer CLI")
-    print("내장 명령: :help :hint :solution :status :next :reset :repo :leaderboard :quit")
+    print("내장 명령: :help :info [brief|full] :hint :solution :status :next :reset :repo :leaderboard :quit")
     _print_stage(trainer.stage_id)
 
     exit_code = 0
@@ -50,7 +50,14 @@ def cmd_play(start_stage: int, player: str) -> int:
             if line == ":quit":
                 break
             if line == ":help":
-                print("git 명령어를 입력하거나 내장 명령(:hint/:next 등)을 사용하세요.")
+                print("git 명령어를 입력하거나 내장 명령(:info/:hint/:next 등)을 사용하세요.")
+                continue
+            if line.startswith(":info"):
+                parts = line.split(maxsplit=1)
+                mode = "brief"
+                if len(parts) == 2 and parts[1].strip() in {"brief", "full"}:
+                    mode = parts[1].strip()
+                print(get_stage_info(trainer.stage_id, mode=mode, repo_path=trainer.repo_path))
                 continue
             if line == ":repo":
                 print(trainer.repo_path)

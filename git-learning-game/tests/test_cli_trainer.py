@@ -1,8 +1,8 @@
 import json
 
 from cli_trainer.doctor import parse_git_version
-from cli_trainer.engine import is_command_allowed, should_repeat_stage
-from cli_trainer.stages import STAGES
+from cli_trainer.engine import GitTrainer, is_command_allowed, should_repeat_stage
+from cli_trainer.stages import STAGES, get_stage_info
 from cli_trainer.storage import append_session, leaderboard
 
 
@@ -31,6 +31,32 @@ def test_retry_policy():
 
 def test_stage_count():
     assert len(STAGES) >= 20
+
+
+def test_stage_info_contains_cherry_pick_use_case():
+    info = get_stage_info(1)
+    assert "Cherry-pick" in info
+    assert "주 사용 시점" in info
+
+
+def test_stage_info_full_mode_contains_recommended_commands():
+    info = get_stage_info(1, mode="full")
+    assert "추천 커맨드:" in info
+    assert "힌트:" in info
+    assert "해법 예시:" in info
+
+
+def test_stage_info_full_mode_renders_branch_ui_when_repo_available():
+    trainer = GitTrainer(stage_id=1)
+    try:
+        info = get_stage_info(1, mode="full", repo_path=trainer.repo_path)
+    finally:
+        trainer.cleanup()
+
+    assert "브랜치 맵 (CLI UI):" in info
+    assert "현재 브랜치:" in info
+    assert "최근 커밋 그래프" in info
+    assert "git log --graph --decorate --oneline --all" in info
 
 
 def test_leaderboard_best_score_per_player(tmp_path, monkeypatch):

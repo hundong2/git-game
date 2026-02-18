@@ -73,9 +73,9 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
-  const [currentInput, setCurrentInput] = useState('');
-  const [commandHistory, setCommandHistory] = useState<string[]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
+  const commandHistoryRef = useRef<string[]>([]);
+  const historyIndexRef = useRef(-1);
+  const draftInputRef = useRef('');
   const [showHelp, setShowHelp] = useState(false);
   
   const commonCommands = [
@@ -165,6 +165,11 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
     
     // Handle input
     let currentLine = '';
+    const clearCurrentLine = () => {
+      for (let i = 0; i < currentLine.length; i++) {
+        terminal.write('\b \b');
+      }
+    };
     
     terminal.onKey(({ key, domEvent }) => {
       const char = key;
@@ -178,15 +183,13 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
           executeCommand(currentLine.trim());
           
           // Add to history
-          setCommandHistory(prev => {
-            const newHistory = [...prev, currentLine.trim()];
-            return newHistory.slice(-50); // Keep last 50 commands
-          });
-          setHistoryIndex(-1);
+          const newHistory = [...commandHistoryRef.current, currentLine.trim()];
+          commandHistoryRef.current = newHistory.slice(-50); // Keep last 50 commands
+          historyIndexRef.current = -1;
+          draftInputRef.current = '';
         }
         
         currentLine = '';
-        setCurrentInput('');
         
       } else if (domEvent.key === 'Backspace') {
         domEvent.preventDefault();
@@ -194,56 +197,45 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
         if (currentLine.length > 0) {
           currentLine = currentLine.slice(0, -1);
           terminal.write('\b \b');
-          setCurrentInput(currentLine);
         }
         
       } else if (domEvent.key === 'ArrowUp') {
         domEvent.preventDefault();
         domEvent.stopPropagation();
-        if (commandHistory.length > 0) {
-          const newIndex = historyIndex + 1;
-          if (newIndex < commandHistory.length) {
-            setHistoryIndex(newIndex);
-            const historicalCommand = commandHistory[commandHistory.length - 1 - newIndex];
-            
-            // Clear current line
-            for (let i = 0; i < currentLine.length; i++) {
-              terminal.write('\b \b');
-            }
-            
-            // Write historical command
+        const history = commandHistoryRef.current;
+        if (history.length > 0) {
+          const previousIndex = historyIndexRef.current;
+          if (previousIndex === -1) {
+            draftInputRef.current = currentLine;
+          }
+
+          const nextIndex = Math.min(previousIndex + 1, history.length - 1);
+          if (nextIndex !== previousIndex) {
+            historyIndexRef.current = nextIndex;
+            const historicalCommand = history[history.length - 1 - nextIndex];
+            clearCurrentLine();
             currentLine = historicalCommand;
             terminal.write(currentLine);
-            setCurrentInput(currentLine);
           }
         }
         
       } else if (domEvent.key === 'ArrowDown') {
         domEvent.preventDefault();
         domEvent.stopPropagation();
-        if (historyIndex > 0) {
-          const newIndex = historyIndex - 1;
-          setHistoryIndex(newIndex);
-          const historicalCommand = commandHistory[commandHistory.length - 1 - newIndex];
-          
-          // Clear current line
-          for (let i = 0; i < currentLine.length; i++) {
-            terminal.write('\b \b');
-          }
-          
-          // Write historical command
+        const previousIndex = historyIndexRef.current;
+        if (previousIndex > 0) {
+          const nextIndex = previousIndex - 1;
+          historyIndexRef.current = nextIndex;
+          const history = commandHistoryRef.current;
+          const historicalCommand = history[history.length - 1 - nextIndex];
+          clearCurrentLine();
           currentLine = historicalCommand;
           terminal.write(currentLine);
-          setCurrentInput(currentLine);
-        } else if (historyIndex === 0) {
-          setHistoryIndex(-1);
-          
-          // Clear current line
-          for (let i = 0; i < currentLine.length; i++) {
-            terminal.write('\b \b');
-          }
-          currentLine = '';
-          setCurrentInput('');
+        } else if (previousIndex === 0) {
+          historyIndexRef.current = -1;
+          clearCurrentLine();
+          currentLine = draftInputRef.current;
+          terminal.write(currentLine);
         }
         
       } else if (domEvent.key === 'Tab') {
@@ -255,7 +247,6 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
           const completion = matches[0].cmd.substring(currentLine.length);
           currentLine += completion;
           terminal.write(completion);
-          setCurrentInput(currentLine);
         }
         
       } else if (char.length === 1) {
@@ -263,7 +254,6 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
         domEvent.stopPropagation();
         currentLine += char;
         terminal.write(char);
-        setCurrentInput(currentLine);
       }
     });
     

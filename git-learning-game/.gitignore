@@ -87,6 +87,7 @@ Thumbs.db
 /tmp/git-game-repos/
 game_repos/
 *.git-game-session
+.git-trainer/
 
 # SSL certificates
 /ssl/

@@ -5,10 +5,12 @@ import subprocess
 import json
 import asyncio
 import random
+import shlex
+import re
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from git import Repo, GitCommandError
-from stages import STAGES, get_stage_validator
+from stages import STAGES, get_stage_validator, get_stage_retry_policy, validate_stage_by_rules
 
 class GitGameEngine:
     """Core game engine that simulates Git operations"""
@@ -20,6 +22,8 @@ class GitGameEngine:
         self.stage_start_time = datetime.now()
         self.completed_stages = []
         self.total_commands = 0
+        self.help_usage_by_stage = {}
+        self.repeated_stages = set()
         
         # Create temporary git repository for this session
         self.temp_dir = tempfile.mkdtemp(prefix=f"git_game_{session_id}_")
@@ -44,6 +48,12 @@ class GitGameEngine:
         
         # Create initial files and commits
         self._setup_initial_state()
+
+    def _reset_repository(self):
+        """Reset repository to the current stage's initial state."""
+        if os.path.exists(self.repo_path):
+            shutil.rmtree(self.repo_path)
+        self._init_repository()
     
     def _setup_initial_state(self):
         """Setup initial repository state based on current stage"""
@@ -71,9 +81,16 @@ class GitGameEngine:
         
         # Create initial branches if specified
         if "initial_branches" in stage_config:
+            try:
+                original_branch = self.repo.active_branch.name
+            except Exception:
+                original_branch = None
+
             for branch_info in stage_config["initial_branches"]:
-                branch = self.repo.create_head(branch_info["name"])
-                if branch_info.get("checkout", False):
+                branch_name = branch_info["name"]
+                branch = self.repo.create_head(branch_name)
+                should_checkout = branch_info.get("checkout", False) or bool(branch_info.get("commits"))
+                if should_checkout:
                     branch.checkout()
                     
                 # Add commits to this branch if specified
@@ -83,37 +100,163 @@ class GitGameEngine:
                             file_path = os.path.join(self.repo_path, filename)
                             with open(file_path, 'w') as f:
                                 f.write(content)
-                            self.repo.index.add([filename])
-                        self.repo.index.commit(commit_info["message"])
+                        self.repo.index.add([filename])
+                    self.repo.index.commit(commit_info["message"])
+
+                if not branch_info.get("checkout", False) and original_branch:
+                    self.repo.git.checkout(original_branch)
+
+    def _extract_command_segments(self, command: str) -> List[List[str]]:
+        """Split a shell command into segments based on shell operators."""
+        try:
+            tokens = shlex.split(command, posix=True)
+        except ValueError:
+            return []
+
+        segments: List[List[str]] = []
+        current: List[str] = []
+        separators = {"|", "&&", "||", ";"}
+
+        for token in tokens:
+            if token in separators:
+                if current:
+                    segments.append(current)
+                    current = []
+                continue
+            current.append(token)
+
+        if current:
+            segments.append(current)
+
+        return segments
+
+    def _is_command_allowed(self, command: str) -> bool:
+        """Allow common shell commands and full git command set."""
+        if not command.strip():
+            return False
+
+        segments = self._extract_command_segments(command)
+        if not segments:
+            return False
+
+        allowed_commands = {
+            "git",
+            "ls",
+            "pwd",
+            "cat",
+            "grep",
+            "find",
+            "tree",
+            "head",
+            "tail",
+            "wc",
+            "sort",
+            "uniq",
+            "cut",
+            "tr",
+            "xargs",
+            "echo",
+            "printf",
+            "touch",
+            "mkdir",
+            "rm",
+            "mv",
+            "cp",
+            "stat",
+            "diff",
+            "patch",
+            "basename",
+            "dirname",
+            "file",
+            "which",
+            "whoami",
+            "date",
+            "sed",
+            "awk",
+            "less",
+            "more",
+        }
+
+        blocked_commands = {
+            "sudo",
+            "su",
+            "ssh",
+            "scp",
+            "curl",
+            "wget",
+            "apt",
+            "apt-get",
+            "apk",
+            "yum",
+            "dnf",
+            "brew",
+            "pip",
+            "npm",
+            "node",
+            "python",
+            "python3",
+            "ruby",
+            "perl",
+            "bash",
+            "sh",
+            "zsh",
+            "fish",
+            "kill",
+            "pkill",
+            "systemctl",
+            "service",
+        }
+
+        env_assignment = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+
+        for segment in segments:
+            tokens = segment[:]
+            while tokens and env_assignment.match(tokens[0]):
+                tokens = tokens[1:]
+
+            if not tokens:
+                continue
+
+            cmd = tokens[0]
+            if cmd in blocked_commands:
+                return False
+            if cmd not in allowed_commands:
+                return False
+
+        return True
     
     async def execute_command(self, command: str) -> Dict[str, Any]:
         """Execute a git command and return the result"""
         self.total_commands += 1
         
         try:
-            # Change to repository directory
-            original_cwd = os.getcwd()
-            os.chdir(self.repo_path)
+            if not os.path.exists(self.repo_path):
+                self._init_repository()
+
+            if not self._is_command_allowed(command):
+                return {
+                    "output": "Command not allowed in game terminal.",
+                    "git_state": self.get_current_state(),
+                    "stage_completed": False,
+                    "error": "Command not allowed"
+                }
             
-            # Execute the command
-            if command.startswith('git '):
-                # Execute git command
-                result = subprocess.run(
-                    command.split(),
-                    capture_output=True,
-                    text=True,
-                    timeout=30
-                )
-                output = result.stdout + result.stderr
-            else:
-                # Handle non-git commands (ls, cat, etc.)
-                result = subprocess.run(
-                    command.split(),
-                    capture_output=True, 
-                    text=True,
-                    timeout=30
-                )
-                output = result.stdout + result.stderr
+            # Execute command in a shell to support pipes and compound commands
+            env = os.environ.copy()
+            env["HOME"] = self.repo_path
+            env["GIT_WORK_TREE"] = self.repo_path
+
+            result = subprocess.run(
+                command,
+                shell=True,
+                executable="/bin/sh",
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                env=env
+            )
+            output = (result.stdout or "") + (result.stderr or "")
             
             # Refresh repo object to get latest state
             self.repo = Repo(self.repo_path)
@@ -127,14 +270,18 @@ class GitGameEngine:
                 self.completed_stages.append({
                     "stage": self.current_stage,
                     "completion_time": completion_time.total_seconds(),
-                    "commands_used": self.total_commands
+                    "commands_used": self.total_commands,
+                    "repeat_triggered": self._should_repeat_stage(self.current_stage)
                 })
                 
-                if self.current_stage < len(STAGES):
+                if self._should_repeat_stage(self.current_stage):
+                    self._repeat_current_stage()
+                    next_stage = self.current_stage
+                elif self.current_stage < len(STAGES):
                     self.current_stage += 1
                     next_stage = self.current_stage
                     self.stage_start_time = datetime.now()
-                    self._setup_initial_state()
+                    self._reset_repository()
             
             return {
                 "output": output,
@@ -158,15 +305,39 @@ class GitGameEngine:
                 "stage_completed": False,
                 "error": str(e)
             }
-        finally:
-            os.chdir(original_cwd)
     
     def _check_stage_completion(self) -> bool:
         """Check if current stage objectives are completed"""
+        rules_result = validate_stage_by_rules(self.current_stage, self.repo, self.repo_path)
+        if rules_result is not None:
+            return rules_result
+
         validator = get_stage_validator(self.current_stage)
         if validator:
             return validator(self.repo, self.repo_path)
         return False
+
+    def register_help_usage(self, stage_id: int, help_type: str):
+        """Record hint/solution usage to enforce retry policy."""
+        if help_type not in ("hint", "solution"):
+            return
+        usage = self.help_usage_by_stage.setdefault(stage_id, {"hint": False, "solution": False})
+        usage[help_type] = True
+
+    def _should_repeat_stage(self, stage_id: int) -> bool:
+        policy = get_stage_retry_policy(stage_id)
+        if policy.get("on_hint_or_solution") != "repeat_same_stage_once":
+            return False
+        if stage_id in self.repeated_stages:
+            return False
+        usage = self.help_usage_by_stage.get(stage_id, {})
+        return bool(usage.get("hint") or usage.get("solution"))
+
+    def _repeat_current_stage(self):
+        """Reset the current stage once after hint/solution usage."""
+        self.repeated_stages.add(self.current_stage)
+        self.stage_start_time = datetime.now()
+        self._reset_repository()
     
     def get_current_state(self) -> Dict[str, Any]:
         """Get current git repository state for UI visualization"""

@@ -13,7 +13,7 @@ interface UseGameSessionReturn {
   startSession: (user: UserCreate) => Promise<GameSession | null>;
   executeCommand: (request: CommandRequest) => Promise<CommandResponse | null>;
   getStageInfo: (stageId: number) => Promise<any>;
-  getStageHelp: (stageId: number) => Promise<any>;
+  getStageHelp: (stageId: number, sessionId?: string, view?: 'hint' | 'solution') => Promise<any>;
 }
 
 export const useGameSession = (): UseGameSessionReturn => {
@@ -75,12 +75,17 @@ export const useGameSession = (): UseGameSessionReturn => {
     }
   }, []);
   
-  const getStageHelp = useCallback(async (stageId: number) => {
+  const getStageHelp = useCallback(async (stageId: number, sessionId?: string, view: 'hint' | 'solution' = 'hint') => {
     setIsLoading(true);
     setError(null);
     
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/help/${stageId}`);
+      const response = await axios.get(`${API_BASE_URL}/api/help/${stageId}`, {
+        params: {
+          session_id: sessionId,
+          view
+        }
+      });
       return response.data;
     } catch (err: any) {
       const errorMessage = err.response?.data?.detail || '도움말을 가져오는데 실패했습니다';

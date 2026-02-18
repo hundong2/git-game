@@ -244,7 +244,7 @@ const GameLayout: React.FC = () => {
   
   // Simulate teammate activity
   const handleTeammateSimulation = () => {
-    if (connectionStatus === 'Open') {
+    if (connectionStatus === 'connected') {
       sendMessage({
         type: 'simulate_teammate',
         session_id: sessionId
@@ -302,7 +302,7 @@ const GameLayout: React.FC = () => {
           <PanelHeader>
             🌳 Git Repository 상태
             <div style={{ marginLeft: 'auto', fontSize: '0.8rem', color: '#8b949e' }}>
-              연결 상태: {connectionStatus === 'Open' ? '🟢 연결됨' : '🔴 연결 안됨'}
+              연결 상태: {connectionStatus === 'connected' ? '🟢 연결됨' : '🔴 연결 안됨'}
             </div>
           </PanelHeader>
           <GitGraph 

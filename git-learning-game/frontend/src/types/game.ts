@@ -42,10 +42,12 @@ export interface Stage {
 
 export interface StageHelp {
   stage: Stage;
-  detailed_help: {
-    commands: string[];
-    explanation: string;
+  detailed_help?: {
+    commands?: string[];
+    explanation?: string;
   };
+  solution?: string;
+  view?: 'hint' | 'solution';
   general_tips: string[];
 }
 

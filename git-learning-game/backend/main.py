@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, Float, Text, Boolean
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
@@ -10,12 +11,21 @@ import json
 import asyncio
 from typing import List, Optional, Dict, Any
 import uuid
+from pathlib import Path
 
 from game_engine import GitGameEngine
 from models import GameSession, User, LeaderboardEntry
 from websocket_manager import WebSocketManager
 
 app = FastAPI(title="Git Learning Game API", version="1.0.0")
+
+# Static frontend build (Docker image copies build to /app/static)
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+ASSET_DIR = STATIC_DIR / "static"
+INDEX_FILE = STATIC_DIR / "index.html"
+
+if ASSET_DIR.exists():
+    app.mount("/static", StaticFiles(directory=ASSET_DIR), name="static")
 
 # CORS middleware for React frontend
 app.add_middleware(
@@ -78,7 +88,33 @@ async def startup_event():
 
 @app.get("/")
 async def root():
+    if INDEX_FILE.exists():
+        return FileResponse(INDEX_FILE)
     return {"message": "Git Learning Game API", "status": "running"}
+
+def _serve_root_asset(filename: str):
+    asset_path = STATIC_DIR / filename
+    if asset_path.exists():
+        return FileResponse(asset_path)
+    if INDEX_FILE.exists():
+        return FileResponse(INDEX_FILE)
+    raise HTTPException(status_code=404, detail="Not Found")
+
+@app.get("/favicon.ico")
+async def favicon():
+    return _serve_root_asset("favicon.ico")
+
+@app.get("/manifest.json")
+async def manifest():
+    return _serve_root_asset("manifest.json")
+
+@app.get("/logo192.png")
+async def logo_192():
+    return _serve_root_asset("logo192.png")
+
+@app.get("/logo512.png")
+async def logo_512():
+    return _serve_root_asset("logo512.png")
 
 @app.post("/api/session/start")
 async def start_game_session(user: UserCreate, db: Session = Depends(get_db)):
@@ -166,10 +202,13 @@ async def get_leaderboard(limit: int = 20, db: Session = Depends(get_db)):
     }
 
 @app.get("/api/help/{stage_id}")
-async def get_stage_help(stage_id: int):
+async def get_stage_help(stage_id: int, session_id: Optional[str] = None, view: str = "hint"):
     """Get help and hints for a specific stage"""
     from stages import get_stage_help
+    if session_id and session_id in game_sessions:
+        game_sessions[session_id].register_help_usage(stage_id, view)
     help_info = get_stage_help(stage_id)
+    help_info["view"] = view
     return help_info
 
 @app.websocket("/ws/{session_id}")
@@ -201,6 +240,12 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     
     except WebSocketDisconnect:
         manager.disconnect(websocket, session_id)
+
+@app.get("/{full_path:path}")
+async def spa_fallback(full_path: str):
+    if INDEX_FILE.exists():
+        return FileResponse(INDEX_FILE)
+    raise HTTPException(status_code=404, detail="Not Found")
 
 if __name__ == "__main__":
     import uvicorn

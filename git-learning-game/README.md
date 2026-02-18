@@ -83,6 +83,39 @@ PORT=3001 npm start
 
 ## 🚀 Quick Start
 
+### Option 0: Command Line Trainer (New)
+
+```bash
+cd git-learning-game
+
+# 환경 점검
+./git-trainer.sh doctor
+
+# 스테이지 목록
+./git-trainer.sh list
+
+# 학습 시작
+./git-trainer.sh play
+
+# 리더보드
+./git-trainer.sh leaderboard
+```
+
+내장 명령:
+- `:hint` 힌트 보기 (해당 스테이지 1회 재도전 트리거)
+- `:solution` 정답 보기 (해당 스테이지 1회 재도전 트리거)
+- `:status` 현재 완료 조건 확인
+- `:next` 완료 조건 충족 시 다음 스테이지 이동
+- `:reset` 현재 스테이지 초기화
+- `:doctor` 환경 점검
+- `:leaderboard` 로컬 최고 점수 보기
+
+CLI 학습앱 특징:
+- 20개 실전형 스테이지 (기본/중급/고급 Git 명령 흐름)
+- 힌트/해답 사용 시 동일 스테이지 1회 재도전 정책
+- 세션 로그 자동 저장 (`./.git-trainer/sessions.jsonl`, `GIT_TRAINER_HOME`로 변경 가능)
+- 스테이지 해설 가이드: `CLI_STAGE_GUIDE.md`
+
 ### Option 1: Docker (Recommended)
 
 ```bash
@@ -208,6 +241,13 @@ We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guid
 3. Create initial repository state
 4. Add help documentation
 5. Test thoroughly
+
+### CLI Stage Contribution
+
+1. Edit `cli_trainer/stages.py`
+2. Add/adjust tests in `tests/test_cli_trainer.py`
+3. Run `python3 -m pytest -q`
+4. Verify local run: `./git-trainer.sh play`
 
 ## 🐛 Issues & Support
 

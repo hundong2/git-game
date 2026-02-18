@@ -3,7 +3,18 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 // Types
 import { ConnectionStatus, WebSocketMessage } from '../types/game';
 
-const WS_BASE_URL = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
+const getDefaultWsBaseUrl = () => {
+  if (process.env.REACT_APP_WS_URL) {
+    return process.env.REACT_APP_WS_URL;
+  }
+
+  if (typeof window !== 'undefined' && window.location) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}`;
+  }
+
+  return 'ws://localhost:8000';
+};
 
 interface UseWebSocketReturn {
   lastMessage: MessageEvent | null;
@@ -35,7 +46,8 @@ export const useWebSocket = (sessionId: string): UseWebSocketReturn => {
     setConnectionStatus('connecting');
     
     try {
-      const wsUrl = `${WS_BASE_URL}/ws/${sessionId}`;
+      const wsBaseUrl = getDefaultWsBaseUrl();
+      const wsUrl = `${wsBaseUrl}/ws/${sessionId}`;
       const websocket = new WebSocket(wsUrl);
       
       websocket.onopen = () => {

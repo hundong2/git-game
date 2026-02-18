@@ -4,69 +4,168 @@ from typing import Dict, List, Any, Callable, Optional
 import os
 from git import Repo
 
+# Default retry policy if a stage does not override it.
+DEFAULT_RETRY_POLICY = {
+    "on_hint_or_solution": "repeat_same_stage_once",
+    "recording": "new_session_with_repeat_flag",
+}
+
+# Simple, structured validation rules for stage completion.
+SUPPORTED_VALIDATION_RULES = {
+    "head_message_contains",
+    "commit_message_contains",
+    "commit_count_at_most",
+    "file_contains",
+    "file_exists",
+    "no_merge_commits",
+    "has_merge_commits",
+    "stash_count_at_least",
+    "branch_exists",
+    "branch_is_current",
+    "worktree_clean",
+}
+
 # Stage definitions with increasing difficulty
 STAGES = [
     # BASIC LEVEL (1-15)
     {
         "stage_id": 1,
-        "title": "Interactive Rebase Introduction",
-        "description": "Learn to squash commits using interactive rebase",
+        "title": "Cherry-pick Hotfix",
+        "description": "Cherry-pick a teammate hotfix and resolve conflicts",
         "difficulty": "basic",
+        "story": {
+            "context": "A teammate pushed a hotfix that must be applied quickly.",
+            "teammate": "Mina (backend)",
+            "incident": "Your local changes touch the same config lines."
+        },
         "objectives": [
-            "Squash the last 3 commits into one",
-            "Change the commit message to 'Combined feature implementation'"
+            "Cherry-pick the hotfix commit from the hotfix branch",
+            "Resolve any conflicts manually",
+            "Keep the hotfix commit message"
+        ],
+        "constraints": [
+            "No merge commits",
+            "Do not use cherry-pick --no-commit"
         ],
         "initial_files": {
-            "README.md": "# Project\nInitial readme",
-            "src/main.py": "def main():\n    print('Hello')\n"
+            "config.py": "DEBUG = False\nVERSION = '1.1'\n"
         },
         "initial_commits": [
-            {"message": "Initial commit", "files": {"README.md": "# Project\nInitial readme"}},
-            {"message": "Add main.py", "files": {"src/main.py": "def main():\n    print('Hello')\n"}},
-            {"message": "Fix typo in main", "files": {"src/main.py": "def main():\n    print('Hello World')\n"}},
-            {"message": "Add documentation", "files": {"src/main.py": "def main():\n    '''Main function'''\n    print('Hello World')\n"}}
+            {"message": "Baseline config", "files": {"config.py": "DEBUG = False\nVERSION = '1.0'\n"}},
+            {"message": "Update debug format", "files": {"config.py": "DEBUG = False  # stable\nVERSION = '1.1'\n"}}
         ],
-        "hint": "Use 'git rebase -i HEAD~3' to start interactive rebase. Use 's' to squash commits."
+        "initial_branches": [
+            {
+                "name": "hotfix",
+                "checkout": False,
+                "commits": [
+                    {"message": "Hotfix: enable debug temporarily", "files": {"config.py": "DEBUG = True\nVERSION = '1.0'\n"}}
+                ]
+            }
+        ],
+        "hint": "Use 'git cherry-pick <commit-hash>' and resolve conflicts manually.",
+        "solution": "git cherry-pick <hotfix-commit> -> resolve -> git add <files> -> git cherry-pick --continue",
+        "validation": {
+            "must_have": [
+                {"type": "file_contains", "path": "config.py", "value": "DEBUG = True"},
+                {"type": "commit_message_contains", "value": "Hotfix:"}
+            ],
+            "must_not_have": [
+                {"type": "has_merge_commits"}
+            ]
+        }
     },
     
     {
         "stage_id": 2,
-        "title": "Cherry-pick with Conflicts", 
-        "description": "Cherry-pick commits from another branch and resolve conflicts",
+        "title": "Rebase Squash Cleanup",
+        "description": "Clean up a messy commit history before review",
         "difficulty": "basic",
-        "objectives": [
-            "Cherry-pick commit from feature-branch",
-            "Resolve merge conflicts manually",
-            "Complete the cherry-pick"
-        ],
-        "initial_files": {
-            "config.py": "DEBUG = False\nVERSION = '1.0'\n"
+        "story": {
+            "context": "Your PR has too many small commits.",
+            "teammate": "Joon (reviewer)",
+            "incident": "You must squash and rename commits before review."
         },
-        "initial_branches": [
-            {
-                "name": "feature-branch",
-                "checkout": False,
-                "commits": [
-                    {"message": "Add new config option", "files": {"config.py": "DEBUG = True\nVERSION = '1.0'\nNEW_FEATURE = True\n"}}
-                ]
-            }
+        "objectives": [
+            "Squash the last 4 commits into 2 commits",
+            "Set the final commit message to start with 'Feature:'"
+        ],
+        "constraints": [
+            "No merge commits",
+            "Use interactive rebase"
         ],
         "initial_commits": [
-            {"message": "Initial config", "files": {"config.py": "DEBUG = False\nVERSION = '1.0'\n"}},
-            {"message": "Update version", "files": {"config.py": "DEBUG = False\nVERSION = '1.1'\n"}}
+            {"message": "Add feature flag", "files": {"feature.py": "FLAG = False\n"}},
+            {"message": "WIP: tweak flag", "files": {"feature.py": "FLAG = True\n"}},
+            {"message": "Refactor flag logic", "files": {"feature.py": "def enabled():\n    return True\n"}},
+            {"message": "Fix typo", "files": {"feature.py": "def enabled():\n    return True\n"}}
         ],
-        "hint": "Use 'git cherry-pick <commit-hash>' and resolve conflicts manually."
+        "hint": "Use 'git rebase -i HEAD~4' and squash commits down to two.",
+        "solution": "git rebase -i HEAD~4 -> squash -> set message to 'Feature: ...'",
+        "validation": {
+            "must_have": [
+                {"type": "head_message_contains", "value": "Feature:"},
+                {"type": "commit_count_at_most", "value": 2, "max_count": 10}
+            ],
+            "must_not_have": [
+                {"type": "has_merge_commits"}
+            ]
+        }
     },
     
     {
         "stage_id": 3,
-        "title": "Advanced Stashing",
-        "description": "Master git stash with partial staging and multiple stashes",
+        "title": "Reset and Recover",
+        "description": "Use reset modes to recover from an accidental commit",
         "difficulty": "basic",
+        "story": {
+            "context": "You committed draft text by mistake.",
+            "teammate": "Kai (editor)",
+            "incident": "You need to undo commits without losing good content."
+        },
+        "objectives": [
+            "Use reset --soft and --mixed to adjust history",
+            "Keep the final notes content intact",
+            "End with a clean working tree"
+        ],
+        "constraints": [
+            "Do not use reset --hard"
+        ],
+        "initial_commits": [
+            {"message": "Add notes", "files": {"notes.txt": "keep\n"}},
+            {"message": "WIP: add draft", "files": {"notes.txt": "keep\nlost draft\n"}},
+            {"message": "Cleanup draft", "files": {"notes.txt": "keep\n"}}
+        ],
+        "hint": "Use 'git reset --soft HEAD~1' to uncommit and keep changes staged.",
+        "solution": "git reset --soft HEAD~1 -> git reset --mixed HEAD~1 -> clean up notes.txt",
+        "validation": {
+            "must_have": [
+                {"type": "file_contains", "path": "notes.txt", "value": "keep"},
+                {"type": "worktree_clean"}
+            ],
+            "must_not_have": [
+                {"type": "file_contains", "path": "notes.txt", "value": "lost draft"}
+            ]
+        }
+    },
+    
+    {
+        "stage_id": 4,
+        "title": "Stash Partial Changes",
+        "description": "Stash only staged changes and re-apply them",
+        "difficulty": "basic",
+        "story": {
+            "context": "A bug report arrived while you were mid-task.",
+            "teammate": "Sohee (support)",
+            "incident": "You need to stash only the staged fixes."
+        },
         "objectives": [
             "Stash only staged changes",
             "Create a named stash",
-            "Apply stash without dropping it"
+            "Apply the stash without dropping it"
+        ],
+        "constraints": [
+            "Do not use stash pop"
         ],
         "initial_files": {
             "app.py": "class App:\n    def __init__(self):\n        self.name = 'MyApp'\n",
@@ -75,59 +174,402 @@ STAGES = [
         "initial_commits": [
             {"message": "Initial app structure", "files": {"app.py": "class App:\n    def __init__(self):\n        self.name = 'MyApp'\n", "utils.py": "def helper():\n    return 'help'\n"}}
         ],
-        "hint": "Use 'git stash push -S' for staged changes and 'git stash push -m' for named stashes."
-    },
-    
-    {
-        "stage_id": 4,
-        "title": "Reset Modes Mastery",
-        "description": "Understand the difference between --soft, --mixed, and --hard resets",
-        "difficulty": "basic",
-        "objectives": [
-            "Use reset --soft to uncommit but keep changes staged",
-            "Use reset --mixed to unstage changes",
-            "Use reset --hard to discard all changes"
-        ],
-        "initial_commits": [
-            {"message": "First commit", "files": {"file1.txt": "content 1"}},
-            {"message": "Second commit", "files": {"file2.txt": "content 2"}},
-            {"message": "Third commit", "files": {"file3.txt": "content 3"}},
-            {"message": "Fourth commit", "files": {"file4.txt": "content 4"}}
-        ],
-        "hint": "Practice with: git reset --soft HEAD~2, git reset --mixed HEAD~1, git reset --hard HEAD~1"
+        "hint": "Use 'git stash push -S -m <name>' for staged changes.",
+        "solution": "git add <files> -> git stash push -S -m <name> -> git stash apply",
+        "validation": {
+            "must_have": [
+                {"type": "stash_count_at_least", "value": 1}
+            ]
+        }
     },
     
     {
         "stage_id": 5,
-        "title": "Complex Merge Conflicts",
-        "description": "Resolve complex merge conflicts with multiple files",
+        "title": "Simple Conflict Merge",
+        "description": "Resolve a single-file conflict in a merge",
         "difficulty": "basic",
+        "story": {
+            "context": "Two teammates updated the same UI setting.",
+            "teammate": "Ari (frontend)",
+            "incident": "Merging causes a conflict in a single file."
+        },
         "objectives": [
-            "Merge feature branch with conflicts",
-            "Resolve conflicts in all files",
+            "Merge the feature branch",
+            "Resolve the conflict",
             "Complete the merge successfully"
         ],
-        "initial_files": {
-            "database.py": "class Database:\n    def connect(self):\n        pass\n",
-            "api.py": "def get_users():\n    return []\n"
-        },
+        "constraints": [
+            "Do not use rebase"
+        ],
         "initial_branches": [
             {
-                "name": "feature-db",
+                "name": "feature-ux",
                 "checkout": False,
                 "commits": [
-                    {"message": "Implement database connection", "files": {
-                        "database.py": "class Database:\n    def connect(self):\n        self.connection = connect_to_db()\n        return self.connection\n",
-                        "api.py": "def get_users():\n    db = Database()\n    return db.get_all_users()\n"
-                    }}
+                    {"message": "Update button style", "files": {"ui.txt": "button: secondary\nlayout: grid\n"}}
                 ]
             }
         ],
         "initial_commits": [
-            {"message": "Initial API", "files": {"database.py": "class Database:\n    def connect(self):\n        pass\n", "api.py": "def get_users():\n    return []\n"}},
-            {"message": "Add error handling", "files": {"api.py": "def get_users():\n    try:\n        return []\n    except Exception as e:\n        return None\n"}}
+            {"message": "Base UI config", "files": {"ui.txt": "button: primary\nlayout: list\n"}},
+            {"message": "Update layout", "files": {"ui.txt": "button: primary\nlayout: grid\n"}}
         ],
-        "hint": "Use 'git merge feature-db' and resolve conflicts manually. Check git status frequently."
+        "hint": "Use 'git merge feature-ux' and resolve the conflict in ui.txt.",
+        "solution": "git merge feature-ux -> resolve -> git add ui.txt -> git commit",
+        "validation": {
+            "must_have": [
+                {"type": "has_merge_commits"}
+            ]
+        }
+    },
+
+    {
+        "stage_id": 6,
+        "title": "Rebase --onto",
+        "description": "Transplant feature commits onto the latest main",
+        "difficulty": "intermediate",
+        "story": {
+            "context": "A feature branch started from an outdated base.",
+            "teammate": "Jae (tech lead)",
+            "incident": "You must move only the feature commits onto main."
+        },
+        "objectives": [
+            "Rebase feature commits onto main, skipping the old base",
+            "Keep a clean history"
+        ],
+        "constraints": [
+            "No merge commits"
+        ],
+        "initial_commits": [
+            {"message": "Core baseline", "files": {"core.py": "VERSION = 1\n"}}
+        ],
+        "initial_branches": [
+            {
+                "name": "old-base",
+                "checkout": True,
+                "commits": [
+                    {"message": "Old baseline", "files": {"feature.py": "mode = 'old'\n"}},
+                    {"message": "Old baseline fix", "files": {"feature.py": "mode = 'old-fixed'\n"}}
+                ]
+            },
+            {
+                "name": "feature",
+                "checkout": True,
+                "commits": [
+                    {"message": "Feature: start", "files": {"feature.py": "mode = 'new'\n"}},
+                    {"message": "Feature: finalize", "files": {"feature.py": "mode = 'new-final'\n"}}
+                ]
+            }
+        ],
+        "hint": "Use 'git rebase --onto main old-base feature'.",
+        "solution": "git rebase --onto main old-base feature",
+        "validation": {
+            "must_have": [
+                {"type": "branch_is_current", "name": "feature"},
+                {"type": "commit_message_contains", "value": "Feature:"},
+                {"type": "no_merge_commits"}
+            ],
+            "must_not_have": [
+                {"type": "commit_message_contains", "value": "Old baseline"}
+            ]
+        }
+    },
+
+    {
+        "stage_id": 7,
+        "title": "Reflog Rescue",
+        "description": "Recover lost work using git reflog",
+        "difficulty": "intermediate",
+        "story": {
+            "context": "A reset hid a critical commit.",
+            "teammate": "Nari (PM)",
+            "incident": "You need to restore the previous state."
+        },
+        "objectives": [
+            "Find the lost commit in reflog",
+            "Restore the branch to include the lost work"
+        ],
+        "constraints": [
+            "No history rewriting tools"
+        ],
+        "initial_commits": [
+            {"message": "Important work", "files": {"important.py": "# Critical code\ndef critical_function():\n    return 'important'\n"}},
+            {"message": "More important work", "files": {"important.py": "# Critical code\ndef critical_function():\n    return 'very important'\n"}},
+            {"message": "Accidental reset point", "files": {"important.py": "# Critical code\ndef critical_function():\n    return 'important'\n", "temp.py": "# temporary\n"}}
+        ],
+        "hint": "Use 'git reflog' to find the missing commit.",
+        "solution": "git reflog -> git reset --hard <commit>",
+        "validation": {
+            "must_have": [
+                {"type": "file_contains", "path": "important.py", "value": "very important"},
+                {"type": "worktree_clean"}
+            ]
+        }
+    },
+
+    {
+        "stage_id": 8,
+        "title": "Cherry-pick Range",
+        "description": "Cherry-pick a range of feature commits",
+        "difficulty": "intermediate",
+        "story": {
+            "context": "Only part of a feature branch is approved.",
+            "teammate": "Min (reviewer)",
+            "incident": "You must pick only the approved range."
+        },
+        "objectives": [
+            "Cherry-pick the approved commit range",
+            "Keep history linear"
+        ],
+        "constraints": [
+            "No merge commits"
+        ],
+        "initial_commits": [
+            {"message": "Baseline service", "files": {"service.py": "value = 1\n"}}
+        ],
+        "initial_branches": [
+            {
+                "name": "feature-range",
+                "checkout": False,
+                "commits": [
+                    {"message": "Feature: add logging", "files": {"service.py": "value = 1\nlog = True\n"}},
+                    {"message": "Feature: add config", "files": {"config.py": "ENABLED = True\n"}},
+                    {"message": "Fix: adjust logging", "files": {"service.py": "value = 1\nlog = 'verbose'\n"}}
+                ]
+            }
+        ],
+        "hint": "Use 'git cherry-pick <start>^..<end>' for a range.",
+        "solution": "git cherry-pick <start>^..<end>",
+        "validation": {
+            "must_have": [
+                {"type": "commit_message_contains", "value": "Feature:"},
+                {"type": "file_exists", "path": "config.py"},
+                {"type": "no_merge_commits"}
+            ]
+        }
+    },
+
+    {
+        "stage_id": 9,
+        "title": "Bisect Bug Hunt",
+        "description": "Locate a bug-introducing commit with git bisect",
+        "difficulty": "intermediate",
+        "story": {
+            "context": "A regression was introduced recently.",
+            "teammate": "Hana (QA)",
+            "incident": "You must find the faulty commit quickly."
+        },
+        "objectives": [
+            "Start a bisect session",
+            "Identify the commit that introduced the bug",
+            "Checkout the bad commit"
+        ],
+        "constraints": [
+            "Avoid manual resets while bisecting"
+        ],
+        "initial_commits": [
+            {"message": "Working version", "files": {"calculator.py": "def add(a, b):\n    return a + b\n"}},
+            {"message": "Add multiplication", "files": {"calculator.py": "def add(a, b):\n    return a + b\n\ndef multiply(a, b):\n    return a * b\n"}},
+            {"message": "Add subtraction", "files": {"calculator.py": "def add(a, b):\n    return a + b\n\ndef multiply(a, b):\n    return a * b\n\ndef subtract(a, b):\n    return a - b\n"}},
+            {"message": "Fix add function", "files": {"calculator.py": "def add(a, b):\n    return a + b + 1  # BUG: extra +1\n\ndef multiply(a, b):\n    return a * b\n\ndef subtract(a, b):\n    return a - b\n"}},
+            {"message": "Add division", "files": {"calculator.py": "def add(a, b):\n    return a + b + 1  # BUG: extra +1\n\ndef multiply(a, b):\n    return a * b\n\ndef subtract(a, b):\n    return a - b\n\ndef divide(a, b):\n    return a / b\n"}}
+        ],
+        "hint": "Use 'git bisect start' then mark good/bad commits.",
+        "solution": "git bisect start -> git bisect bad -> git bisect good <hash>",
+        "validation": {
+            "must_have": [
+                {"type": "head_message_contains", "value": "Fix add function"}
+            ]
+        }
+    },
+
+    {
+        "stage_id": 10,
+        "title": "Worktree Hotfix",
+        "description": "Create a worktree for a hotfix branch",
+        "difficulty": "intermediate",
+        "story": {
+            "context": "A release is frozen, but a hotfix is needed.",
+            "teammate": "Rin (release manager)",
+            "incident": "Work on the hotfix in a separate worktree."
+        },
+        "objectives": [
+            "Create a worktree for a hotfix branch",
+            "Commit the hotfix change"
+        ],
+        "constraints": [
+            "Do not modify the main branch directly"
+        ],
+        "initial_commits": [
+            {"message": "Production app", "files": {"app.py": "def main():\n    return 'ok'\n"}}
+        ],
+        "hint": "Use 'git worktree add -b hotfix <path> hotfix'.",
+        "solution": "git worktree add -b hotfix ../hotfix hotfix -> edit -> git commit",
+        "validation": {
+            "must_have": [
+                {"type": "branch_exists", "name": "hotfix"}
+            ]
+        }
+    },
+
+    {
+        "stage_id": 11,
+        "title": "Filter-Repo Cleanup",
+        "description": "Remove sensitive data from history",
+        "difficulty": "advanced",
+        "story": {
+            "context": "A secret was committed to the repo.",
+            "teammate": "Eun (security)",
+            "incident": "You must remove the file from history."
+        },
+        "objectives": [
+            "Remove secrets.txt from history",
+            "Keep the rest of the repo intact"
+        ],
+        "constraints": [
+            "Do not use git commit --amend"
+        ],
+        "initial_commits": [
+            {"message": "Add readme", "files": {"README.md": "# Project\n"}},
+            {"message": "Accidentally add secrets", "files": {"secrets.txt": "API_KEY=123\n"}}
+        ],
+        "hint": "Use 'git filter-repo --path secrets.txt --invert-paths'.",
+        "solution": "git filter-repo --path secrets.txt --invert-paths",
+        "validation": {
+            "must_have": [
+                {"type": "file_exists", "path": "README.md"}
+            ],
+            "must_not_have": [
+                {"type": "file_exists", "path": "secrets.txt"}
+            ]
+        }
+    },
+
+    {
+        "stage_id": 12,
+        "title": "Replace Object",
+        "description": "Use git replace to swap a bad commit temporarily",
+        "difficulty": "advanced",
+        "story": {
+            "context": "A bad commit exists in history.",
+            "teammate": "Yul (lead)",
+            "incident": "You must replace it without rewriting history."
+        },
+        "objectives": [
+            "Create a replacement object for a bad commit",
+            "Verify the replacement ref exists"
+        ],
+        "constraints": [
+            "Do not reset or rebase"
+        ],
+        "initial_commits": [
+            {"message": "Add dataset", "files": {"data.txt": "bad\n"}},
+            {"message": "Correct dataset", "files": {"data.txt": "good\n"}}
+        ],
+        "hint": "Use 'git replace <bad> <good>'.",
+        "solution": "git replace <bad> <good>",
+        "validation": {
+            "must_have": [
+                {"type": "file_exists", "path": ".git/refs/replace"}
+            ]
+        }
+    },
+
+    {
+        "stage_id": 13,
+        "title": "Bundle Exchange",
+        "description": "Create a bundle to share commits offline",
+        "difficulty": "advanced",
+        "story": {
+            "context": "You need to send changes without network access.",
+            "teammate": "Sera (ops)",
+            "incident": "Prepare a Git bundle for transfer."
+        },
+        "objectives": [
+            "Create a bundle file with current commits",
+            "Ensure the bundle is saved in the repo"
+        ],
+        "constraints": [
+            "Do not push to any remote"
+        ],
+        "initial_commits": [
+            {"message": "Add offline doc", "files": {"offline.md": "# Offline Mode\n"}}
+        ],
+        "hint": "Use 'git bundle create feature.bundle HEAD'.",
+        "solution": "git bundle create feature.bundle HEAD",
+        "validation": {
+            "must_have": [
+                {"type": "file_exists", "path": "feature.bundle"}
+            ]
+        }
+    },
+
+    {
+        "stage_id": 14,
+        "title": "Custom Merge Strategy",
+        "description": "Merge using a custom strategy option",
+        "difficulty": "advanced",
+        "story": {
+            "context": "A merge should prefer the current branch's config.",
+            "teammate": "Doyeon (devops)",
+            "incident": "Use a strategy option to keep current settings."
+        },
+        "objectives": [
+            "Merge the feature branch with a custom strategy",
+            "Keep the base config in config.yml"
+        ],
+        "constraints": [
+            "Do not use a default merge"
+        ],
+        "initial_commits": [
+            {"message": "Base config", "files": {"config.yml": "mode: base\n"}}
+        ],
+        "initial_branches": [
+            {
+                "name": "feature-merge",
+                "checkout": False,
+                "commits": [
+                    {"message": "Feature config", "files": {"config.yml": "mode: feature\n", "feature.txt": "feature\n"}}
+                ]
+            }
+        ],
+        "hint": "Use 'git merge -X ours feature-merge'.",
+        "solution": "git merge -X ours feature-merge",
+        "validation": {
+            "must_have": [
+                {"type": "has_merge_commits"},
+                {"type": "file_contains", "path": "config.yml", "value": "mode: base"}
+            ]
+        }
+    },
+
+    {
+        "stage_id": 15,
+        "title": "Notes Workflow",
+        "description": "Add review notes in a custom namespace",
+        "difficulty": "advanced",
+        "story": {
+            "context": "Review feedback must be attached without altering commits.",
+            "teammate": "Sol (reviewer)",
+            "incident": "Record notes under a shared namespace."
+        },
+        "objectives": [
+            "Add a git note to the latest commit",
+            "Use a custom notes namespace"
+        ],
+        "constraints": [
+            "Do not amend commits"
+        ],
+        "initial_commits": [
+            {"message": "Add docs", "files": {"docs.md": "# Docs\n"}}
+        ],
+        "hint": "Use 'git notes --ref=team add -m \"review\"'.",
+        "solution": "git notes --ref=team add -m \"review\"",
+        "validation": {
+            "must_have": [
+                {"type": "file_exists", "path": ".git/refs/notes/team"}
+            ]
+        }
     },
     
     # INTERMEDIATE LEVEL (16-35)
@@ -330,6 +772,100 @@ def get_stage_validator(stage_id: int) -> Optional[Callable]:
     }
     return validators.get(stage_id)
 
+def get_stage_retry_policy(stage_id: int) -> Dict[str, Any]:
+    """Get retry policy for a stage, falling back to default."""
+    if stage_id < 1 or stage_id > len(STAGES):
+        return DEFAULT_RETRY_POLICY
+    stage = STAGES[stage_id - 1]
+    return stage.get("retry_policy", DEFAULT_RETRY_POLICY)
+
+def _has_merge_commits(repo: Repo, max_count: int = 50) -> bool:
+    for commit in repo.iter_commits(max_count=max_count):
+        if len(commit.parents) > 1:
+            return True
+    return False
+
+def _get_stash_count(repo: Repo) -> int:
+    try:
+        stash_list = repo.git.stash("list")
+    except Exception:
+        return 0
+    if not stash_list:
+        return 0
+    return len([line for line in stash_list.split("\n") if line.strip()])
+
+def _read_file(repo_path: str, path: str) -> Optional[str]:
+    file_path = os.path.join(repo_path, path)
+    if not os.path.exists(file_path):
+        return None
+    with open(file_path, "r") as handle:
+        return handle.read()
+
+def _evaluate_validation_rule(rule: Dict[str, Any], repo: Repo, repo_path: str) -> bool:
+    rule_type = rule.get("type")
+    if rule_type not in SUPPORTED_VALIDATION_RULES:
+        return False
+
+    if rule_type == "head_message_contains":
+        value = rule.get("value", "")
+        return value in repo.head.commit.message
+    if rule_type == "commit_message_contains":
+        value = rule.get("value", "")
+        max_count = rule.get("max_count", 50)
+        return any(value in commit.message for commit in repo.iter_commits(max_count=max_count))
+    if rule_type == "commit_count_at_most":
+        max_count = rule.get("max_count", 50)
+        value = rule.get("value", max_count)
+        return len(list(repo.iter_commits(max_count=max_count))) <= value
+    if rule_type == "file_contains":
+        path = rule.get("path", "")
+        value = rule.get("value", "")
+        content = _read_file(repo_path, path)
+        return content is not None and value in content
+    if rule_type == "file_exists":
+        path = rule.get("path", "")
+        return os.path.exists(os.path.join(repo_path, path))
+    if rule_type == "no_merge_commits":
+        return not _has_merge_commits(repo)
+    if rule_type == "has_merge_commits":
+        return _has_merge_commits(repo)
+    if rule_type == "stash_count_at_least":
+        value = rule.get("value", 1)
+        return _get_stash_count(repo) >= value
+    if rule_type == "branch_exists":
+        name = rule.get("name", "")
+        return any(branch.name == name for branch in repo.branches)
+    if rule_type == "branch_is_current":
+        name = rule.get("name", "")
+        try:
+            return repo.active_branch.name == name
+        except Exception:
+            return False
+    if rule_type == "worktree_clean":
+        return not repo.is_dirty(untracked_files=True)
+
+    return False
+
+def validate_stage_by_rules(stage_id: int, repo: Repo, repo_path: str) -> Optional[bool]:
+    """Validate stage completion using structured rules if present."""
+    if stage_id < 1 or stage_id > len(STAGES):
+        return None
+    stage = STAGES[stage_id - 1]
+    rules = stage.get("validation")
+    if not rules:
+        return None
+
+    must_have = rules.get("must_have", [])
+    must_not_have = rules.get("must_not_have", [])
+
+    for rule in must_have:
+        if not _evaluate_validation_rule(rule, repo, repo_path):
+            return False
+    for rule in must_not_have:
+        if _evaluate_validation_rule(rule, repo, repo_path):
+            return False
+    return True
+
 def validate_stage_1_interactive_rebase(repo: Repo, repo_path: str) -> bool:
     """Validate that interactive rebase was completed correctly"""
     try:
@@ -398,24 +934,50 @@ def get_stage_help(stage_id: int) -> Dict[str, Any]:
     detailed_help = {
         1: {
             "commands": [
-                "git log --oneline  # See current commits",
-                "git rebase -i HEAD~3  # Start interactive rebase",
-                "# In editor: change 'pick' to 's' for squash",
-                "# Save and edit commit message"
-            ],
-            "explanation": "Interactive rebase allows you to modify commit history. Use 'squash' to combine commits."
-        },
-        2: {
-            "commands": [
-                "git log --oneline --all  # See all branches", 
-                "git cherry-pick <commit-hash>  # Pick specific commit",
-                "# If conflicts occur:",
-                "git status  # See conflicted files",
-                "# Edit files to resolve conflicts",
+                "git log --oneline --all  # See hotfix commits",
+                "git cherry-pick <commit-hash>",
+                "# Resolve conflicts if needed",
                 "git add <resolved-files>",
                 "git cherry-pick --continue"
             ],
-            "explanation": "Cherry-pick applies changes from specific commits. Resolve conflicts manually."
+            "explanation": "Cherry-pick applies a specific commit from another branch. Resolve conflicts by editing files and continuing."
+        },
+        2: {
+            "commands": [
+                "git log --oneline  # Check recent commits",
+                "git rebase -i HEAD~4",
+                "# In editor: squash to leave 2 commits",
+                "# Save and update the final commit message"
+            ],
+            "explanation": "Interactive rebase lets you squash and rename commits to keep history clean."
+        },
+        3: {
+            "commands": [
+                "git log --oneline",
+                "git reset --soft HEAD~1  # Uncommit but keep staged",
+                "git reset --mixed HEAD~1  # Unstage changes",
+                "git status"
+            ],
+            "explanation": "Use reset modes to move HEAD without losing the working tree changes."
+        },
+        4: {
+            "commands": [
+                "git add <files>",
+                "git stash push -S -m \"partial\"",
+                "git stash list",
+                "git stash apply"
+            ],
+            "explanation": "Stash staged changes only, then apply them back without dropping."
+        },
+        5: {
+            "commands": [
+                "git merge feature-ux",
+                "git status",
+                "# Resolve ui.txt conflict",
+                "git add ui.txt",
+                "git commit"
+            ],
+            "explanation": "Resolve conflicts in the working tree and complete the merge."
         },
         # Add more detailed help for other stages
     }
@@ -423,6 +985,7 @@ def get_stage_help(stage_id: int) -> Dict[str, Any]:
     return {
         "stage": stage,
         "detailed_help": detailed_help.get(stage_id, {}),
+        "solution": stage.get("solution"),
         "general_tips": [
             "Use 'git status' frequently to check current state",
             "Use 'git log --oneline --graph --all' to visualize branches",

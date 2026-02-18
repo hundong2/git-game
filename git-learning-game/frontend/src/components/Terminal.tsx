@@ -105,7 +105,7 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
         foreground: '#f0f6fc',
         cursor: '#00d2ff',
         cursorAccent: '#f0f6fc',
-        selection: '#264f78',
+        selectionBackground: '#264f78',
         black: '#0d1117',
         red: '#da3633',
         green: '#238636',
@@ -170,6 +170,8 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
       const char = key;
       
       if (domEvent.key === 'Enter') {
+        domEvent.preventDefault();
+        domEvent.stopPropagation();
         terminal.writeln('');
         
         if (currentLine.trim()) {
@@ -187,6 +189,8 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
         setCurrentInput('');
         
       } else if (domEvent.key === 'Backspace') {
+        domEvent.preventDefault();
+        domEvent.stopPropagation();
         if (currentLine.length > 0) {
           currentLine = currentLine.slice(0, -1);
           terminal.write('\b \b');
@@ -195,6 +199,7 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
         
       } else if (domEvent.key === 'ArrowUp') {
         domEvent.preventDefault();
+        domEvent.stopPropagation();
         if (commandHistory.length > 0) {
           const newIndex = historyIndex + 1;
           if (newIndex < commandHistory.length) {
@@ -215,6 +220,7 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
         
       } else if (domEvent.key === 'ArrowDown') {
         domEvent.preventDefault();
+        domEvent.stopPropagation();
         if (historyIndex > 0) {
           const newIndex = historyIndex - 1;
           setHistoryIndex(newIndex);
@@ -242,6 +248,7 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
         
       } else if (domEvent.key === 'Tab') {
         domEvent.preventDefault();
+        domEvent.stopPropagation();
         // Simple command completion
         const matches = commonCommands.filter(c => c.cmd.startsWith(currentLine));
         if (matches.length === 1) {
@@ -252,6 +259,8 @@ const Terminal: React.FC<TerminalProps> = ({ onCommandExecute, gameState }) => {
         }
         
       } else if (char.length === 1) {
+        domEvent.preventDefault();
+        domEvent.stopPropagation();
         currentLine += char;
         terminal.write(char);
         setCurrentInput(currentLine);

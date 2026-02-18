@@ -116,6 +116,8 @@ const StageInfo: React.FC<StageInfoProps> = ({ stageId, sessionId }) => {
   const [stage, setStage] = useState<Stage | null>(null);
   const [help, setHelp] = useState<StageHelp | null>(null);
   const [showHelp, setShowHelp] = useState(false);
+  const [solution, setSolution] = useState<string | null>(null);
+  const [showSolution, setShowSolution] = useState(false);
   const [loading, setLoading] = useState(true);
   
   const { getStageInfo, getStageHelp } = useGameSession();
@@ -146,7 +148,7 @@ const StageInfo: React.FC<StageInfoProps> = ({ stageId, sessionId }) => {
     
     if (!help) {
       try {
-        const helpData = await getStageHelp(stageId);
+        const helpData = await getStageHelp(stageId, sessionId, 'hint');
         if (helpData) {
           setHelp(helpData);
         }
@@ -156,6 +158,29 @@ const StageInfo: React.FC<StageInfoProps> = ({ stageId, sessionId }) => {
     }
     
     setShowHelp(true);
+  };
+
+  const handleGetSolution = async () => {
+    if (showSolution) {
+      setShowSolution(false);
+      return;
+    }
+
+    if (!solution) {
+      try {
+        const helpData = await getStageHelp(stageId, sessionId, 'solution');
+        if (helpData?.solution) {
+          setSolution(helpData.solution);
+        } else {
+          setSolution('해답이 준비되지 않았습니다.');
+        }
+      } catch (error) {
+        console.error('Failed to load solution:', error);
+        setSolution('해답을 불러오지 못했습니다.');
+      }
+    }
+
+    setShowSolution(true);
   };
   
   if (loading) {
@@ -228,6 +253,15 @@ const StageInfo: React.FC<StageInfoProps> = ({ stageId, sessionId }) => {
         >
           {showHelp ? '🙈 Hide Detailed Help' : '🆘 Get Detailed Help'}
         </HelpButton>
+
+        <HelpButton
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={handleGetSolution}
+          style={{ marginTop: '8px' }}
+        >
+          {showSolution ? '🙈 Hide Solution' : '🧩 View Solution'}
+        </HelpButton>
         
         {showHelp && help && (
           <HelpPanel
@@ -268,6 +302,19 @@ const StageInfo: React.FC<StageInfoProps> = ({ stageId, sessionId }) => {
                 </ul>
               </div>
             )}
+          </HelpPanel>
+        )}
+
+        {showSolution && solution && (
+          <HelpPanel
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            transition={{ duration: 0.3 }}
+          >
+            <h4 style={{ color: '#f472b6', marginBottom: '8px' }}>🧩 Solution:</h4>
+            <p style={{ marginBottom: '0', lineHeight: 1.4 }}>
+              {solution}
+            </p>
           </HelpPanel>
         )}
       </StageHeader>

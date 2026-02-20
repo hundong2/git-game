@@ -38,6 +38,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 34 SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
       - name: Compute app version
         id: version
         run: |
@@ -54,11 +62,18 @@ jobs:
         with:
           gradle-version: 8.6
 
+      - name: Print toolchain info
+        run: |
+          java -version
+          gradle -v
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          sdkmanager --version
+
       - name: Build Debug APK
         env:
           APP_VERSION_CODE: ${{ steps.version.outputs.version_code }}
           APP_VERSION_NAME: ${{ steps.version.outputs.version_name }}
-        run: gradle :app:assembleDebug
+        run: gradle --stacktrace :app:assembleDebug
 
       - name: Upload Debug APK artifact
         uses: actions/upload-artifact@v4
@@ -84,6 +99,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android 34 SDK packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
       - name: Validate release tag format
         run: |
           if [[ ! "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -107,11 +130,18 @@ jobs:
         with:
           gradle-version: 8.6
 
+      - name: Print toolchain info
+        run: |
+          java -version
+          gradle -v
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          sdkmanager --version
+
       - name: Build Release APK
         env:
           APP_VERSION_CODE: ${{ steps.version.outputs.version_code }}
           APP_VERSION_NAME: ${{ steps.version.outputs.version_name }}
-        run: gradle :app:assembleRelease
+        run: gradle --stacktrace :app:assembleRelease
 
       - name: Upload Release APK artifact
         uses: actions/upload-artifact@v4

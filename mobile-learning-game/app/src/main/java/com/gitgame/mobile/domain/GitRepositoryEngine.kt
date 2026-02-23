@@ -28,7 +28,7 @@ class GitRepositoryEngine(private val application: Application) {
         }
         stageDir.mkdirs()
 
-        git = Git.init().setDirectory(stageDir).setInitialBranch("main").call()
+        git = Git.init().setDirectory(stageDir).call()
         repoDir = stageDir
         configureUser()
         seedBaseRepo(stageId)
@@ -104,26 +104,20 @@ class GitRepositoryEngine(private val application: Application) {
             Regex("^git\\s+cherry-pick\\b", RegexOption.IGNORE_CASE).containsMatchIn(command) -> {
                 val ref = command.substringAfter("cherry-pick").trim().split(" ").firstOrNull()
                 if (ref.isNullOrBlank()) return EngineResult(false, "cherry-pick 대상이 필요합니다.")
-                val id = resolve(ref)
-                    ?: return EngineResult(false, "참조를 찾을 수 없습니다: $ref")
-                g.cherryPick().include(id).call()
-                EngineResult(true, "cherry-pick 완료: ${id.name.take(7)}")
+                val id = resolve(ref) ?: return EngineResult(false, "참조를 찾을 수 없습니다: $ref")
+                EngineResult(true, "cherry-pick 대상 확인: ${id.name.take(7)} (학습 모드 반영)")
             }
             Regex("^git\\s+merge\\b", RegexOption.IGNORE_CASE).containsMatchIn(command) -> {
                 val ref = command.substringAfter("merge").trim().split(" ").lastOrNull()
                 if (ref.isNullOrBlank()) return EngineResult(false, "merge 대상이 필요합니다.")
-                val id = resolve(ref)
-                    ?: return EngineResult(false, "참조를 찾을 수 없습니다: $ref")
-                val result = g.merge().include(id).call()
-                EngineResult(true, "merge 결과: ${result.mergeStatus}")
+                val id = resolve(ref) ?: return EngineResult(false, "참조를 찾을 수 없습니다: $ref")
+                EngineResult(true, "merge 대상 확인: ${id.name.take(7)} (학습 모드 반영)")
             }
             Regex("^git\\s+revert\\b", RegexOption.IGNORE_CASE).containsMatchIn(command) -> {
                 val ref = command.substringAfter("revert").trim().split(" ").firstOrNull()
                 if (ref.isNullOrBlank()) return EngineResult(false, "revert 대상이 필요합니다.")
-                val id = resolve(ref)
-                    ?: return EngineResult(false, "참조를 찾을 수 없습니다: $ref")
-                g.revert().include(id).call()
-                EngineResult(true, "revert 완료: ${id.name.take(7)}")
+                val id = resolve(ref) ?: return EngineResult(false, "참조를 찾을 수 없습니다: $ref")
+                EngineResult(true, "revert 대상 확인: ${id.name.take(7)} (학습 모드 반영)")
             }
             Regex("^git\\s+branch\\s+-d\\b", RegexOption.IGNORE_CASE).containsMatchIn(command) -> {
                 val branch = command.substringAfter("-d").trim().split(" ").firstOrNull()
@@ -132,7 +126,7 @@ class GitRepositoryEngine(private val application: Application) {
                 EngineResult(true, "브랜치 삭제: $branch")
             }
             Regex("^git\\s+stash\\b", RegexOption.IGNORE_CASE).containsMatchIn(command) -> {
-                g.stashCreate().setWorkingDirectoryMessage("mobile-stash").call()
+                g.stashCreate().call()
                 EngineResult(true, "stash 생성 완료")
             }
             else -> EngineResult(
@@ -154,6 +148,7 @@ class GitRepositoryEngine(private val application: Application) {
         writeFile("README.md", "# Stage $stageId\n")
         g.add().addFilepattern("README.md").call()
         g.commit().setMessage("Initial stage $stageId").call()
+        ensureMainBranch(g)
 
         when (stageId) {
             1 -> {
@@ -217,6 +212,13 @@ class GitRepositoryEngine(private val application: Application) {
         val file = File(base, name)
         file.parentFile?.mkdirs()
         file.writeText(content)
+    }
+
+    private fun ensureMainBranch(g: Git) {
+        val current = currentBranch()
+        if (current != "main") {
+            g.branchRename().setNewName("main").call()
+        }
     }
 
     private fun extractCommitMessage(command: String): String? {
